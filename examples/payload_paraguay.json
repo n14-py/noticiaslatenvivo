@@ -1,0 +1,68 @@
+{
+  "live_id": "py-2026-09-30-mediodia",
+  "pais": "py",
+  "canal": "Noticias LAT",
+  "videos": [
+    {
+      "article_id": "66f1a1",
+      "titulo": "El Congreso retoma el debate del presupuesto",
+      "categoria": "politica",
+      "video_url": "https://cdn.ejemplo/politica-1.mp4",
+      "descripcion": "La cámara vuelve a tratar el proyecto esta semana."
+    },
+    {
+      "article_id": "66f1a2",
+      "titulo": "Designan a la nueva ministra del Interior",
+      "categoria": "politica",
+      "video_url": "https://cdn.ejemplo/politica-2.mp4"
+    },
+    {
+      "article_id": "66f1a3",
+      "titulo": "Marcha llega hasta el centro de Asunción",
+      "categoria": "politica",
+      "video_url": "https://cdn.ejemplo/politica-3.mp4"
+    },
+    {
+      "article_id": "66f1a4",
+      "titulo": "El dólar abre estable en el mercado local",
+      "categoria": "economia",
+      "video_url": "https://cdn.ejemplo/economia-1.mp4"
+    },
+    {
+      "article_id": "66f1a5",
+      "titulo": "Acuerdan un ajuste del salario mínimo",
+      "categoria": "economia",
+      "video_url": "https://cdn.ejemplo/economia-2.mp4"
+    },
+    {
+      "article_id": "66f1a6",
+      "titulo": "Exportaciones de soja muestran un repunte",
+      "categoria": "economia",
+      "video_url": "https://cdn.ejemplo/economia-3.mp4"
+    },
+    {
+      "article_id": "66f1a7",
+      "titulo": "La Albirroja concentra de cara al próximo partido",
+      "categoria": "deportes",
+      "video_url": "https://cdn.ejemplo/deportes-1.mp4"
+    },
+    {
+      "article_id": "66f1a8",
+      "titulo": "Definidas las semifinales del torneo local",
+      "categoria": "deportes",
+      "video_url": "https://cdn.ejemplo/deportes-2.mp4"
+    },
+    {
+      "article_id": "66f1a9",
+      "titulo": "Campaña de vacunación suma nuevos puestos",
+      "categoria": "salud",
+      "video_url": "https://cdn.ejemplo/salud-1.mp4"
+    },
+    {
+      "article_id": "66f1b0",
+      "titulo": "Una startup paraguaya abre ronda de inversión",
+      "categoria": "tecnologia",
+      "video_url": "https://cdn.ejemplo/tech-1.mp4"
+    }
+  ]
+}

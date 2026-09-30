@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+temp_audio/
+temp_video/
+temp_processing/
+output/
+locks_history/
+*.log
+.DS_Store
+token_*.json
+client_secret_*.json
