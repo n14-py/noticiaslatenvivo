@@ -1,0 +1,17 @@
+.git
+.gitignore
+.dockerignore
+__pycache__
+*.pyc
+.venv
+venv
+temp_audio
+temp_video
+temp_processing
+output
+locks_history
+*.log
+.DS_Store
+token_*.json
+client_secret_*.json
+.env
