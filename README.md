@@ -84,6 +84,8 @@ python probar_live_local.py --json payload.json --cuenta 1
 
 Abre `http://127.0.0.1:8765/` solo en esta máquina. Baja cada `video_url`, pone la voz del presentador y reproduce las notas en orden, como el directo. Ctrl+C lo corta y borra lo descargado. No abre YouTube.
 
+La voz es la misma Edge TTS de TTS-FMPEG. Hace falta `edge-tts` 7.3.1 o más nueva: Microsoft rechaza las anteriores con un 403. Si la que tenés instalada es vieja, el ensayo la actualiza solo la primera vez. Si la voz elegida ya no existe, usa otra en español y el directo sigue.
+
 | `--cuenta` | Canal |
 | --- | --- |
 | 0 | Noticias Lat |

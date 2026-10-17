@@ -1,6 +1,6 @@
 Flask
 gunicorn
-edge-tts
+edge-tts>=7.3.1
 requests
 boto3
 python-dotenv
