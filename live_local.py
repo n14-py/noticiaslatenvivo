@@ -1,17 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Ensayo del directo en la computadora local.
+Directo real, solo en esta computadora.
 
-Usa el mismo JSON que lfaftechapi manda a POST /live/start, arma título,
-canal y escaleta con el motor real, y lo muestra en 127.0.0.1.
-No abre YouTube, no descarga las notas y no avisa a la API.
+Usa el mismo JSON que lfaftechapi manda a POST /live/start: baja cada mp4,
+pone la voz del presentador y reproduce las notas. No abre YouTube y no
+avisa a la API. Al cortar, borra lo que descargó.
 """
 
 import html
 import json
-import os
-import re
-import subprocess
 import threading
 import time
 import webbrowser
@@ -19,25 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import requests
 
-from config import ADMIN_API_KEY, FONT_PATH, MAIN_API_URL
-from ffmpeg_tools import probe_duration, write_concat_playlist
-
-_FUENTES = [
-    FONT_PATH,
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/macos/Inter-Bold.ttf",
-    r"C:\Windows\Fonts\arialbd.ttf",
-    "/Library/Fonts/Arial Bold.ttf",
-    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-]
-
-
-def fuente_disponible():
-    for path in _FUENTES:
-        if path and os.path.exists(path):
-            return path
-    return None
+from config import ADMIN_API_KEY, MAIN_API_URL
+from live_orchestrator import _cleanup_dir
 
 
 def aplicar_cuenta(payload, cuenta=None, canal=None):
@@ -78,75 +58,14 @@ def bajar_payload(job_id):
     return payload
 
 
-def _plano(texto):
-    return re.sub(r"\s+", " ", str(texto or "")).strip()
-
-
-def _lineas(texto, ancho, maximo):
-    palabras = _plano(texto).split()
-    if not palabras:
-        return ""
-    filas = []
-    actual = ""
-    for palabra in palabras:
-        propuesta = palabra if not actual else actual + " " + palabra
-        if len(propuesta) > ancho and actual:
-            filas.append(actual)
-            actual = palabra
-        else:
-            actual = propuesta
-        if len(filas) >= maximo:
-            break
-    if len(filas) < maximo and actual:
-        filas.append(actual)
-    return "\n".join(filas[:maximo])
-
-
-def _duracion(base, texto, piso, techo):
-    estimado = base + max(0, len(_plano(texto)) - 80) / 28
-    return round(min(techo, max(piso, estimado)), 2)
-
-
-def plan_local(show, segundos_nota=6, segundos_puente=5, segundos_intro=9, segundos_outro=8):
-    """Placas del ensayo, en el mismo orden en que saldría el directo."""
-    package = show["package"]
-    blocks = show["rundown"]["blocks"]
-    pais = show["meta"]["pais_nombre"]
-    canal = show["meta"]["canal"]
-    segmentos = []
-    clock = 0.0
-
-    def agregar(kind, titulo, texto, categoria, base, piso, techo):
-        nonlocal clock
-        duration = _duracion(base, texto, piso, techo)
-        segmentos.append({
-            "kind": kind,
-            "titulo": titulo,
-            "texto": texto,
-            "categoria": categoria,
-            "pais": pais,
-            "canal": canal,
-            "starts_at": round(clock, 2),
-            "duration": duration,
-        })
-        clock += duration
-
-    agregar("intro", pais, package["intro_text"], "apertura", segundos_intro, 6, 16)
-    bridge_i = 0
-    for index, block in enumerate(blocks):
-        if index > 0:
-            bridges = package["bridges"]
-            if bridge_i < len(bridges):
-                texto = bridges[bridge_i]
-            else:
-                texto = f"Ahora pasamos a {block['label']}."
-            bridge_i += 1
-            agregar("puente", block["label"].capitalize(), texto, block["label"], segundos_puente, 4, 10)
-        for video in block["videos"]:
-            texto = video.get("descripcion") or video["titulo"]
-            agregar("nota", video["titulo"], texto, block["label"], segundos_nota, 3, 20)
-    agregar("outro", canal, package["outro_text"], "cierre", segundos_outro, 6, 14)
-    return segmentos
+_KIND_PAGINA = {
+    "intro": "intro",
+    "bridge": "puente",
+    "puente": "puente",
+    "news": "nota",
+    "nota": "nota",
+    "outro": "outro",
+}
 
 
 def ficha_publica(show, segmentos):
@@ -169,118 +88,15 @@ def ficha_publica(show, segmentos):
         "duracion": round(sum(item["duration"] for item in segmentos), 2),
         "segmentos": [
             {
-                "kind": item["kind"],
-                "titulo": item["titulo"],
-                "categoria": item["categoria"],
+                "kind": _KIND_PAGINA.get(item["kind"], item["kind"]),
+                "titulo": item.get("titulo") or "Bloque",
+                "categoria": item.get("categoria") or "",
                 "starts_at": item["starts_at"],
                 "duration": item["duration"],
             }
             for item in segmentos
         ],
     }
-
-
-def _ff_ruta(path):
-    texto = os.path.abspath(path).replace("\\", "/")
-    return texto.replace(":", "\\:").replace("'", r"\'")
-
-
-def _escribir(path, texto):
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(texto if texto else " ")
-
-
-def _clip(segmento, destino, fuente, indice, carpeta):
-    colores = {
-        "intro": "0x0B1F3A",
-        "puente": "0x1C1408",
-        "nota": "0x121212",
-        "outro": "0x0B1F3A",
-    }
-    kicker = {
-        "intro": "APERTURA",
-        "puente": "AHORA",
-        "nota": segmento["categoria"].upper(),
-        "outro": "CIERRE",
-    }.get(segmento["kind"], "EN VIVO")
-    if segmento["kind"] == "nota":
-        kicker = f"{segmento['pais'].upper()} · {kicker}"
-
-    kicker_path = os.path.join(carpeta, f"kicker_{indice}.txt")
-    titulo_path = os.path.join(carpeta, f"titulo_{indice}.txt")
-    cuerpo_path = os.path.join(carpeta, f"cuerpo_{indice}.txt")
-    pie_path = os.path.join(carpeta, f"pie_{indice}.txt")
-    _escribir(kicker_path, kicker)
-    _escribir(titulo_path, _lineas(segmento["titulo"], 32, 3))
-    _escribir(cuerpo_path, _lineas(segmento["texto"], 52, 4))
-    _escribir(pie_path, segmento["canal"])
-
-    font = _ff_ruta(fuente)
-    vf = ",".join([
-        "drawbox=x=0:y=0:w=14:h=ih:color=0xE10600:t=fill",
-        "drawbox=x=36:y=28:w=132:h=40:color=0xE10600:t=fill",
-        f"drawtext=expansion=none:fontfile='{font}':text='EN VIVO':fontcolor=white:fontsize=22:x=52:y=36",
-        f"drawtext=expansion=none:fontfile='{font}':textfile='{_ff_ruta(kicker_path)}':fontcolor=0xF5C518:fontsize=26:x=72:y=150",
-        f"drawtext=expansion=none:fontfile='{font}':textfile='{_ff_ruta(titulo_path)}':fontcolor=white:fontsize=42:line_spacing=8:x=72:y=200",
-        f"drawtext=expansion=none:fontfile='{font}':textfile='{_ff_ruta(cuerpo_path)}':fontcolor=0xD0D0D0:fontsize=26:line_spacing=8:x=72:y=430",
-        f"drawtext=expansion=none:fontfile='{font}':textfile='{_ff_ruta(pie_path)}':fontcolor=0x9AA0A6:fontsize=22:x=72:y=660",
-    ])
-    segundos = f"{segmento['duration']:.2f}"
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", f"color=c={colores.get(segmento['kind'], '0x121212')}:s=1280x720:r=30:d={segundos}",
-        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-        "-vf", vf,
-        "-t", segundos,
-        "-shortest",
-        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-        "-g", "60", "-keyint_min", "60",
-        "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "128k",
-        destino,
-    ]
-    try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=120)
-    except subprocess.CalledProcessError as exc:
-        detalle = (exc.stderr or b"").decode("utf-8", errors="ignore")[-500:]
-        raise RuntimeError(f"FFmpeg no armó la placa {indice}: {detalle}") from exc
-    if not os.path.exists(destino) or os.path.getsize(destino) < 1000:
-        raise RuntimeError(f"La placa {indice} quedó vacía.")
-    return destino
-
-
-def render_programa(segmentos, carpeta):
-    fuente = fuente_disponible()
-    if not fuente:
-        raise RuntimeError("No encontré una fuente para las placas. Hace falta assets_video/fonts/ARIALBD.TTF.")
-    if not shutil_which("ffmpeg"):
-        raise RuntimeError("No está ffmpeg en el PATH. Sin eso no puedo armar el ensayo.")
-    os.makedirs(carpeta, exist_ok=True)
-    partes = []
-    for indice, segmento in enumerate(segmentos):
-        destino = os.path.join(carpeta, f"placa_{indice:02d}.mp4")
-        _clip(segmento, destino, fuente, indice, carpeta)
-        partes.append(destino)
-    programa = os.path.join(carpeta, "programa.mp4")
-    lista = write_concat_playlist(partes, os.path.join(carpeta, "lista.txt"))
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "concat", "-safe", "0", "-i", lista,
-        "-c", "copy", "-movflags", "+faststart",
-        programa,
-    ]
-    try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=180)
-    except subprocess.CalledProcessError as exc:
-        detalle = (exc.stderr or b"").decode("utf-8", errors="ignore")[-500:]
-        raise RuntimeError(f"No pude unir el ensayo: {detalle}") from exc
-    if probe_duration(programa) < 1:
-        raise RuntimeError("El ensayo quedó sin duración.")
-    return programa
-
-
-def shutil_which(nombre):
-    import shutil
-    return shutil.which(nombre)
 
 
 def pagina_html(ficha):
@@ -360,7 +176,7 @@ h1 {{ font-size: 20px; line-height: 1.35; font-weight: 650; margin: 14px 0 12px;
       </div>
       <div class="descripcion">{html.escape(ficha["descripcion"])}</div>
       <div class="tags">{tags}</div>
-      <p class="aviso">Así queda la ficha que iría a YouTube: título, canal y orden. Las placas reemplazan a las notas para poder verlo sin descargar los videos ni abrir el canal. El directo real sigue siendo el que dispara lfaftechapi.</p>
+      <p class="aviso">Esto es el directo con los videos de las notas y la voz del presentador. Solo se ve en esta computadora: no se abrió YouTube. Al cortar con Ctrl+C se borran los archivos que se descargaron.</p>
     </section>
     <aside class="lado">
       <h2>En este vivo</h2>
@@ -551,8 +367,8 @@ def _handler(emision):
     return Handler
 
 
-def servir(ficha, video_path, puerto=8765, abrir=True):
-    """Publica el ensayo solo en 127.0.0.1. El reloj del vivo arranca acá."""
+def servir(ficha, video_path, puerto=8765, abrir=True, carpeta=None):
+    """Publica el directo solo en 127.0.0.1. Al cortar, borra la carpeta de trabajo."""
     emision = _Emision(ficha, video_path, time.monotonic())
     try:
         server = ThreadingHTTPServer(("127.0.0.1", puerto), _handler(emision))
@@ -562,19 +378,21 @@ def servir(ficha, video_path, puerto=8765, abrir=True):
         ) from exc
     url = f"http://127.0.0.1:{puerto}/"
     print("")
-    print("Ensayo al aire, solo en esta computadora.")
+    print("Directo al aire, solo en esta computadora.")
     print(f"  Canal:  {ficha['canal']} (cuenta {ficha['cuenta']})")
     print(f"  Título: {ficha['titulo']}")
     print(f"  Mirá:   {url}")
-    print("  No se abrió YouTube y no se avisó a lfaftechapi.")
-    print("  Ctrl+C corta el ensayo.")
+    print("  Se reproducen los videos de las notas. No se abrió YouTube.")
+    print("  Ctrl+C corta y borra lo descargado.")
     print("")
     if abrir:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nEnsayo cortado.")
+        print("\nDirecto cortado. Borrando los videos descargados.")
     finally:
         server.server_close()
+        if carpeta:
+            _cleanup_dir(carpeta)
     return url

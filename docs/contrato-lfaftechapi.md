@@ -140,4 +140,4 @@ Esas rutas ya existen en lfaftechapi (`routes/lives.js`). `cuenta` actualiza la 
 
 ## Ensayo local
 
-`python probar_live_local.py` toma este mismo JSON y lo muestra en `http://127.0.0.1:8765/`, en la computadora donde se ejecuta. No llama a YouTube ni a los webhooks. `--cuenta 0|1|2|3` elige el canal. `--desde-api --job <id>` baja el `payload` que lfaftechapi ya guardó en `GET /api/lives/admin/jobs/:id`.
+`python probar_live_local.py --json payload.json` baja los `video_url`, arma la voz y reproduce el directo en `http://127.0.0.1:8765/`. No llama a YouTube ni a los webhooks. Al cortar, borra los mp4. `--cuenta 0|1|2|3` elige el canal. `--desde-api --job <id>` usa el `payload` de `GET /api/lives/admin/jobs/:id`.

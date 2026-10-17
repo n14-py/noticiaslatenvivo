@@ -79,10 +79,10 @@ Para reemplazarlos, soltá otro mp4 en la misma carpeta. No hace falta tocar có
 Para ver cómo queda el vivo sin salir a YouTube ni avisarle a lfaftechapi:
 
 ```bash
-python probar_live_local.py --cuenta 1
+python probar_live_local.py --json payload.json --cuenta 1
 ```
 
-Eso usa el JSON de ejemplo (el mismo formato que manda lfaftechapi) y abre `http://127.0.0.1:8765/` solo en esta máquina. Ahí se ve el título, el canal y la escaleta, corriendo como un directo. Ctrl+C lo corta.
+Abre `http://127.0.0.1:8765/` solo en esta máquina. Baja cada `video_url`, pone la voz del presentador y reproduce las notas en orden, como el directo. Ctrl+C lo corta y borra lo descargado. No abre YouTube.
 
 | `--cuenta` | Canal |
 | --- | --- |
@@ -98,7 +98,7 @@ python probar_live_local.py --json payload.json
 python probar_live_local.py --desde-api --job ID_DEL_DIRECTO
 ```
 
-El ensayo muestra placas con el título de cada nota. No descarga los mp4 ni abre el canal de YouTube. El directo de verdad sigue siendo `POST /live/start`: ahí sí se usa el `video_url` de cada nota y la cuenta que vino en el JSON.
+Hace falta el JSON con los mp4 de verdad. El ejemplo de `examples/` usa direcciones de muestra y no tiene video para reproducir. El directo que sale a YouTube sigue siendo `POST /live/start`, en la cuenta que vino en el JSON.
 
 ## Endpoints
 

@@ -11,10 +11,12 @@ Arma el directo y lo empuja a YouTube en tiempo real.
 
 import logging
 import os
+import shutil
 import subprocess
 import threading
 import time
 import uuid
+from urllib.parse import unquote, urlparse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -490,6 +492,32 @@ def _event_payload(show, session, status):
     }
 
 
+def _ruta_local(url):
+    """Acepta un mp4 que ya está en la computadora, además de http(s)."""
+    text = str(url or "").strip()
+    if not text or "://" in text and not text.lower().startswith("file:"):
+        return None
+    if text.lower().startswith("file:"):
+        parsed = urlparse(text)
+        text = unquote(parsed.path or "")
+        if os.name == "nt" and text.startswith("/") and len(text) > 2 and text[2] == ":":
+            text = text[1:]
+    if os.path.isfile(text):
+        return text
+    return None
+
+
+def _traer_nota(url, dest):
+    local = _ruta_local(url)
+    if local:
+        logger.info("  [Media] Uso el archivo local %s", os.path.basename(local))
+        shutil.copyfile(local, dest)
+        if os.path.getsize(dest) > 1024:
+            return dest
+        return None
+    return download_media(url, dest)
+
+
 def _download_blocks(blocks, workdir):
     ready = []
     for block in blocks:
@@ -497,7 +525,7 @@ def _download_blocks(blocks, workdir):
         for video in block["videos"]:
             ext = ".mp4"
             dest = os.path.join(workdir, f"nota_{uuid.uuid4().hex[:8]}{ext}")
-            path = download_media(video["video_url"], dest)
+            path = _traer_nota(video["video_url"], dest)
             if not path:
                 logger.error("  [Directo] Salteo nota sin archivo: %s", video["titulo"])
                 continue
@@ -522,7 +550,15 @@ def _build_segments(show, rng, workdir):
 
     intro = _render_spoken("intro", show["package"]["intro_text"], anchor, rng, workdir, 0)
     intro_dur = probe_duration(intro)
-    segments.append({"kind": "intro", "path": intro, "duration": intro_dur, "starts_at": 0, "ad_break": False})
+    segments.append({
+        "kind": "intro",
+        "path": intro,
+        "duration": intro_dur,
+        "starts_at": 0,
+        "ad_break": False,
+        "titulo": "Apertura",
+        "categoria": "apertura",
+    })
     clock += intro_dur
 
     bridge_i = 0
@@ -542,6 +578,8 @@ def _build_segments(show, rng, workdir):
                 "duration": duration,
                 "starts_at": clock,
                 "ad_break": True,
+                "titulo": block["label"].capitalize(),
+                "categoria": block["label"],
             })
             clock += duration
         for video in block["videos"]:
@@ -557,6 +595,7 @@ def _build_segments(show, rng, workdir):
                 "starts_at": clock,
                 "ad_break": False,
                 "titulo": video["titulo"],
+                "categoria": block["label"],
             })
             clock += duration
 
@@ -567,8 +606,97 @@ def _build_segments(show, rng, workdir):
         "duration": probe_duration(outro),
         "starts_at": clock,
         "ad_break": False,
+        "titulo": "Cierre",
+        "categoria": "cierre",
     })
     return [seg for seg in segments if seg["duration"] > 0.4]
+
+
+def _remux_mp4(playlist, destino):
+    """Pasa la escaleta (mpegts) a un mp4 que el navegador puede reproducir."""
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "concat", "-safe", "0", "-i", playlist,
+        "-c", "copy", "-bsf:a", "aac_adtstoasc",
+        "-movflags", "+faststart",
+        destino,
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
+    except subprocess.CalledProcessError as exc:
+        detalle = (exc.stderr or b"").decode("utf-8", errors="ignore")[-400:]
+        raise RuntimeError(f"No pude unir las notas en un solo video: {detalle}") from exc
+    if not os.path.exists(destino) or probe_duration(destino) < 1:
+        raise RuntimeError("El directo local quedó sin video.")
+    return destino
+
+
+def _borrar_menos(workdir, conservar):
+    if not workdir or not os.path.isdir(workdir):
+        return
+    for name in os.listdir(workdir):
+        if name in conservar:
+            continue
+        path = os.path.join(workdir, name)
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def armar_emision(show, rng, workdir):
+    """
+    El mismo armado que el directo de YouTube: baja cada nota, mezcla la voz
+    del presentador y une todo. No abre YouTube ni avisa a lfaftechapi.
+    Al terminar borra las descargas y deja solo el programa.
+    """
+    from config import TEMP_AUDIO_DIR
+
+    os.makedirs(workdir, exist_ok=True)
+    marca = time.time()
+    downloaded = _download_blocks(show["rundown"]["blocks"], workdir)
+    if not downloaded:
+        raise RuntimeError(
+            "No pude bajar ninguna nota. Cada video_url tiene que ser un mp4 que se pueda abrir."
+        )
+
+    rundown = build_rundown([], explicit_blocks=downloaded)
+    show["rundown"] = rundown
+    show["meta"]["video_count"] = rundown["video_count"]
+    anchor = show["anchor"]
+    show["package"] = compose(show["meta"], rundown["blocks"], anchor, rng)
+    show["package"]["anchor"] = anchor
+
+    segments = _build_segments(show, rng, workdir)
+    if not any(seg["kind"] == "news" for seg in segments):
+        raise RuntimeError("Las notas se bajaron, pero no quedaron listas para reproducir.")
+
+    playlist = write_concat_playlist(
+        [seg["path"] for seg in segments],
+        os.path.join(workdir, "playlist.txt"),
+    )
+    programa = os.path.join(workdir, "programa.mp4")
+    _remux_mp4(playlist, programa)
+    _borrar_menos(workdir, {"programa.mp4"})
+    if os.path.isdir(TEMP_AUDIO_DIR):
+        for name in os.listdir(TEMP_AUDIO_DIR):
+            path = os.path.join(TEMP_AUDIO_DIR, name)
+            if not name.endswith(".mp3") or not os.path.isfile(path):
+                continue
+            try:
+                if os.path.getmtime(path) >= marca - 1:
+                    os.remove(path)
+            except OSError:
+                pass
+    logger.info(
+        "  [Directo] Programa local listo: %s notas, %.0f segundos. Las descargas ya se borraron.",
+        rundown["video_count"],
+        sum(seg["duration"] for seg in segments),
+    )
+    return segments, programa
 
 
 def _cleanup_dir(workdir):
