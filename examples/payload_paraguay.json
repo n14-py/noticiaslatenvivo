@@ -1,7 +1,9 @@
 {
   "live_id": "py-2026-09-30-mediodia",
   "pais": "py",
-  "canal": "Noticias LAT",
+  "canal": "Noticias Lat",
+  "cuenta": 0,
+  "canal_id": 0,
   "videos": [
     {
       "article_id": "66f1a1",

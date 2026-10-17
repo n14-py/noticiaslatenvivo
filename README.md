@@ -74,6 +74,32 @@ Ya están copiados los de TTS-FMPEG:
 
 Para reemplazarlos, soltá otro mp4 en la misma carpeta. No hace falta tocar código.
 
+## Ensayo en tu computadora
+
+Para ver cómo queda el vivo sin salir a YouTube ni avisarle a lfaftechapi:
+
+```bash
+python probar_live_local.py --cuenta 1
+```
+
+Eso usa el JSON de ejemplo (el mismo formato que manda lfaftechapi) y abre `http://127.0.0.1:8765/` solo en esta máquina. Ahí se ve el título, el canal y la escaleta, corriendo como un directo. Ctrl+C lo corta.
+
+| `--cuenta` | Canal |
+| --- | --- |
+| 0 | Noticias Lat |
+| 1 | Noticias Lat Última Hora |
+| 2 | Noticias Lat Ahora |
+| 3 | Noticias Lat Hoy |
+
+Con el JSON que ya armó la API:
+
+```bash
+python probar_live_local.py --json payload.json
+python probar_live_local.py --desde-api --job ID_DEL_DIRECTO
+```
+
+El ensayo muestra placas con el título de cada nota. No descarga los mp4 ni abre el canal de YouTube. El directo de verdad sigue siendo `POST /live/start`: ahí sí se usa el `video_url` de cada nota y la cuenta que vino en el JSON.
+
 ## Endpoints
 
 | Método | Ruta | Qué hace |

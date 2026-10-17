@@ -169,8 +169,47 @@ ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "secreto123456")
 MAIN_API_URL = os.getenv("MAIN_API_URL", "https://lfaftechapi.onrender.com").rstrip("/")
 PORT = int(os.getenv("PORT", "3002"))
 CANAL_DEFAULT = os.getenv("CANAL_NOMBRE", "Noticias LAT")
+# Los mismos cuatro canales que arma lfaftechapi en utils/liveCatalog.js.
+CANALES = {
+    0: "Noticias Lat",
+    1: "Noticias Lat Última Hora",
+    2: "Noticias Lat Ahora",
+    3: "Noticias Lat Hoy",
+}
 LIVE_PRIVACY = os.getenv("LIVE_PRIVACY", "public")
 MAX_ACCOUNTS = int(os.getenv("YOUTUBE_MAX_ACCOUNTS", "6"))
+
+
+def canal_nombre(cuenta):
+    """Nombre que se dice al aire para la cuenta que eligió lfaftechapi."""
+    try:
+        indice = int(cuenta)
+    except (TypeError, ValueError):
+        return CANAL_DEFAULT
+    return CANALES.get(indice, f"Canal {indice}")
+
+
+def requested_account(payload, max_accounts=None):
+    """Cuenta de YouTube pedida por lfaftechapi. None si hay que rotar."""
+    if not isinstance(payload, dict):
+        return None
+    limite = MAX_ACCOUNTS if max_accounts is None else max_accounts
+    for key in ("cuenta", "account_index", "canal_id"):
+        if key not in payload:
+            continue
+        raw = payload.get(key)
+        if raw is None or raw == "" or isinstance(raw, bool):
+            continue
+        try:
+            account = int(raw)
+        except (TypeError, ValueError):
+            return None
+        if 0 <= account < limite:
+            return account
+        raise ValueError(f"La cuenta {account} no existe. Las cuentas van de 0 a {limite - 1}.")
+    return None
+
+
 AD_CUEPOINT_SECONDS = int(os.getenv("AD_CUEPOINT_SECONDS", "30"))
 AD_MIN_GAP_SECONDS = int(os.getenv("AD_MIN_GAP_SECONDS", "120"))
 AD_REPEAT_SECONDS = int(os.getenv("AD_REPEAT_SECONDS", "600"))
