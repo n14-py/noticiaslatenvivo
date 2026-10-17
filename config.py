@@ -37,7 +37,8 @@ VOICES = {
     "mujer_1": "es-MX-DaliaNeural",
     "mujer_2": "es-ES-ElviraNeural",
     "hombre_1": "es-AR-TomasNeural",
-    "hombre_2": "es-CO-TomasNeural",
+    # Tomás de Colombia lo retiró Microsoft. Gonzalo es la voz masculina de ese país.
+    "hombre_2": "es-CO-GonzaloNeural",
 }
 
 VOICE_GENDER = {
