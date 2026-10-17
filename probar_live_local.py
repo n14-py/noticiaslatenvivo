@@ -23,7 +23,7 @@ if RAIZ not in sys.path:
 
 import script_director
 from live_local import aplicar_cuenta, bajar_payload, ficha_publica, servir
-from live_orchestrator import armar_emision, prepare_show
+from live_orchestrator import _cleanup_dir, armar_emision, prepare_show
 from rundown_builder import PayloadError
 
 
@@ -86,6 +86,7 @@ def main(argv=None):
         segmentos, video = armar_emision(show, rng, carpeta)
     except RuntimeError as exc:
         print(exc)
+        _cleanup_dir(carpeta)
         return 2
 
     ficha = ficha_publica(show, segmentos)
