@@ -17,7 +17,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
-from config import AD_REPEAT_SECONDS, LOCKS_DIR, MAX_ACCOUNTS, SCOPES
+from config import AD_REPEAT_SECONDS, LOCKS_DIR, MAX_ACCOUNTS, SCOPES, canal_nombre, requested_account
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +145,10 @@ class YouTubeLiveSession:
         self.watch_url = None
         self.privacy = "public"
 
-    def open(self, title, description, privacy="public"):
+    def open(self, title, description, privacy="public", account_index=None):
         self.privacy = privacy if privacy in ("public", "unlisted", "private") else "public"
+        if account_index is not None:
+            return self._open_fixed(title, description, account_index)
         start = next_account_index()
         last_error = None
 
@@ -181,6 +183,34 @@ class YouTubeLiveSession:
                 self._cleanup_partial()
 
         raise YouTubeLiveError(f"Ninguna cuenta pudo abrir el directo. Último error: {last_error}")
+
+    def _open_fixed(self, title, description, account_index):
+        """Sale solo en la cuenta que pidió lfaftechapi. Si falla, no rota a otra."""
+        forced = requested_account({"cuenta": account_index})
+        if forced is None:
+            raise YouTubeLiveError("lfaftechapi no mandó una cuenta válida.")
+        nombre = canal_nombre(forced)
+        logger.info("  [YouTube] lfaftechapi pidió la cuenta %s (%s).", forced, nombre)
+        youtube = get_authenticated_service(forced)
+        if not youtube:
+            raise YouTubeLiveError(
+                f"La cuenta {forced} ({nombre}) no tiene un token válido (token_{forced}.json)."
+            )
+        self.youtube = youtube
+        self.account_index = forced
+        try:
+            self._create_stream(title)
+            self._create_broadcast(title, description, with_monetization=True)
+            self._bind()
+        except Exception:
+            self._cleanup_partial()
+            raise
+        self.watch_url = f"https://www.youtube.com/watch?v={self.broadcast_id}"
+        logger.info(
+            "  [YouTube] Directo creado en la cuenta pedida %s: %s (pauta=%s)",
+            forced, self.watch_url, self.monetization_enabled,
+        )
+        return self
 
     def _create_stream(self, title):
         stream = self.youtube.liveStreams().insert(

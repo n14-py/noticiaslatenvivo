@@ -32,6 +32,8 @@ from config import (
     MAIN_API_URL,
     OUTRO_IMAGE,
     TEMP_VIDEO_DIR,
+    canal_nombre,
+    requested_account,
 )
 from ffmpeg_tools import (
     make_thumbnail,
@@ -58,6 +60,8 @@ STATE = {
     "status": "idle",
     "live_id": None,
     "pais": None,
+    "canal": None,
+    "cuenta": None,
     "title": None,
     "youtube_id": None,
     "watch_url": None,
@@ -133,10 +137,17 @@ def prepare_show(payload, rng, with_script=True):
     if not rundown["blocks"]:
         raise PayloadError("No quedaron bloques para emitir.")
 
+    try:
+        cuenta = requested_account(payload)
+    except ValueError as exc:
+        raise PayloadError(str(exc)) from exc
     voice_key = payload.get("voz") or payload.get("voice")
     anchor = choose_anchor(rng, voice_key=voice_key)
+    canal = str(payload.get("canal") or "").strip()
+    if not canal:
+        canal = canal_nombre(cuenta) if cuenta is not None else CANAL_DEFAULT
     meta = {
-        "canal": payload.get("canal") or CANAL_DEFAULT,
+        "canal": canal,
         "pais_codigo": code,
         "pais_nombre": nombre,
         "fecha_larga": fecha_larga,
@@ -157,6 +168,7 @@ def prepare_show(payload, rng, with_script=True):
         "anchor": anchor,
         "package": package,
         "privacy": payload.get("privacy") or payload.get("privacidad"),
+        "cuenta": cuenta,
     }
 
 
@@ -289,6 +301,8 @@ def run_live(payload, rng):
         status="preparing",
         live_id=live_id,
         pais=show["meta"]["pais_codigo"],
+        canal=show["meta"]["canal"],
+        cuenta=show.get("cuenta"),
         title=None,
         youtube_id=None,
         watch_url=None,
@@ -336,6 +350,7 @@ def run_live(payload, rng):
             title=show["package"]["youtube_title"],
             description=show["package"]["youtube_description"],
             privacy=show["privacy"] or "public",
+            account_index=show.get("cuenta"),
         )
         session.set_thumbnail(thumb)
         try:
@@ -412,16 +427,42 @@ def run_live(payload, rng):
             session.complete()
         elif session:
             session.abandon()
-        _webhook("live_failed", {
-            "liveId": live_id,
-            "pais": show["meta"]["pais_codigo"],
-            "error": str(exc),
-            "status": "failed",
-        })
+        cuenta_aviso = show.get("cuenta")
+        if session is not None and session.account_index is not None:
+            cuenta_aviso = session.account_index
+        _webhook("live_failed", _evento_fallo(show, live_id, cuenta_aviso, exc))
         return {"status": "failed", "live_id": live_id, "error": str(exc)}
     finally:
         _ffmpeg_proc = None
         _cleanup_dir(workdir)
+
+
+def _evento_fallo(show, live_id, cuenta, exc):
+    """Mismo aviso que el de salida, para que lfaftechapi cierre el job."""
+    cuerpo = {
+        "liveId": live_id,
+        "pais": show["meta"]["pais_codigo"],
+        "paisNombre": show["meta"]["pais_nombre"],
+        "canal": show["meta"]["canal"],
+        "cuenta": cuenta,
+        "error": str(exc),
+        "status": "failed",
+        "videoCount": show["rundown"]["video_count"],
+        "articleIds": [
+            video["article_id"]
+            for block in show["rundown"]["blocks"]
+            for video in block["videos"]
+        ],
+    }
+    package = show.get("package") or {}
+    if package.get("youtube_title"):
+        cuerpo["title"] = package["youtube_title"]
+    anchor = package.get("anchor") or {}
+    if anchor.get("name"):
+        cuerpo["presenter"] = anchor["name"]
+    if anchor.get("voice_key"):
+        cuerpo["voice"] = anchor["voice_key"]
+    return cuerpo
 
 
 def _event_payload(show, session, status):
@@ -439,6 +480,8 @@ def _event_payload(show, session, status):
         "presenter": show["package"]["anchor"]["name"],
         "scriptSource": show["package"]["source"],
         "status": status,
+        "cuenta": session.account_index,
+        "canal": show["meta"]["canal"],
         "articleIds": [
             video["article_id"]
             for block in show["rundown"]["blocks"]

@@ -46,13 +46,44 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data["pais"], "Paraguay")
-        self.assertIn("septiembre", data["fecha"])
+        self.assertIn("de", data["fecha"])
+        self.assertTrue(data["fecha"].strip())
         self.assertEqual(data["bloques"][0]["categoria"], "politica")
         self.assertEqual(len(data["bloques"][0]["videos"]), 3)
         self.assertEqual(data["bloques"][1]["categoria"], "economia")
         self.assertIn("economía", data["bridges"][0])
         self.assertTrue(data["intro_text"])
         self.assertTrue(data["youtube_title"])
+        self.assertIsNone(data["cuenta"])
+
+    def test_preview_respeta_el_canal_de_lfaftechapi(self):
+        payload = _payload()
+        payload["canal"] = "Noticias Lat Ahora"
+        payload["cuenta"] = 2
+        payload["canal_id"] = 2
+        payload["live_id"] = "py-c2-ensayo"
+        response = self.client.post(
+            "/live/preview",
+            json=payload,
+            headers={"x-api-key": ADMIN_API_KEY},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["canal"], "Noticias Lat Ahora")
+        self.assertEqual(data["cuenta"], 2)
+        self.assertEqual(data["live_id"], "py-c2-ensayo")
+        self.assertIn("Noticias Lat Ahora", data["intro_text"])
+
+    def test_cuenta_que_no_existe_no_abre_el_vivo(self):
+        payload = _payload()
+        payload["cuenta"] = 40
+        response = self.client.post(
+            "/live/start",
+            json=payload,
+            headers={"x-api-key": ADMIN_API_KEY},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cuenta", response.get_json()["error"].lower())
 
     def test_sin_clave_no_entra(self):
         response = self.client.post("/live/preview", json=_payload())

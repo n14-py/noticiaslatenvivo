@@ -36,6 +36,32 @@ El motor agrupa solo: los primeros 3 de política, después economía, después 
 
 `video_url` también acepta `videoUrl` o `url`. `categoria` acepta `category`.
 
+### Canal
+
+lfaftechapi manda el canal junto con las notas. Hay 4 cuentas (`token_0.json` … `token_3.json`):
+
+| `cuenta` | Canal |
+| --- | --- |
+| 0 | Noticias Lat |
+| 1 | Noticias Lat Última Hora |
+| 2 | Noticias Lat Ahora |
+| 3 | Noticias Lat Hoy |
+
+`canal` es el nombre que dice el presentador y el que queda en el título. `cuenta` (también vale `canal_id`) elige el token. Si viene, el directo sale solo en esa cuenta: si el token falla, no se pasa a otra. Si no viene, se rota como antes.
+
+```json
+{
+  "live_id": "py-c0-20261017T1200Z-ab12",
+  "pais": "py",
+  "canal": "Noticias Lat",
+  "cuenta": 0,
+  "canal_id": 0,
+  "videos": []
+}
+```
+
+El aviso de vuelta incluye `cuenta` y `canal`.
+
 ### Bloques ya armados
 
 Si lfaftechapi prefiere mandar los grupos, se respeta ese orden y entre cada grupo entra el presentador.
@@ -96,16 +122,22 @@ Header `x-api-key`. Cuerpo:
   "presenter": "Camila",
   "scriptSource": "gemini",
   "status": "live",
+  "cuenta": 0,
+  "canal": "Noticias Lat",
   "articleIds": ["66f1a1"]
 }
 ```
 
-Esas tres rutas todavía no existen en lfaftechapi. Si no responden, el directo no se corta: solo queda el aviso en el log.
+Esas rutas ya existen en lfaftechapi (`routes/lives.js`). `cuenta` actualiza la cuenta real del job y `canal` el nombre del canal. Si el aviso no llega, el directo no se corta: queda el registro en el log y el reloj de lfaftechapi reconcilia con `GET /live/status`.
 
 ## Vista previa, sin abrir YouTube
 
 `POST /live/preview` con el mismo JSON. Devuelve título, descripción, intro, puentes y el orden de los bloques.
 
-`GET /live/status` muestra si está preparando, en vivo o terminó.
+`GET /live/status` muestra si está preparando, en vivo o terminó. Incluye `cuenta` y `canal`.
 
 `POST /live/stop` corta la transmisión.
+
+## Ensayo local
+
+`python probar_live_local.py` toma este mismo JSON y lo muestra en `http://127.0.0.1:8765/`, en la computadora donde se ejecuta. No llama a YouTube ni a los webhooks. `--cuenta 0|1|2|3` elige el canal. `--desde-api --job <id>` baja el `payload` que lfaftechapi ya guardó en `GET /api/lives/admin/jobs/:id`.

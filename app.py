@@ -93,6 +93,8 @@ def preview():
         "bridges": package["bridges"],
         "outro_text": package["outro_text"],
         "bloques": blocks,
+        "canal": show["meta"]["canal"],
+        "cuenta": show["cuenta"],
     }), 200
 
 
@@ -106,7 +108,7 @@ def start():
 
     try:
         # Validación rápida. El título lo escribe la IA dentro del hilo, una sola vez.
-        live_orchestrator.prepare_show(payload, random.Random(), with_script=False)
+        show = live_orchestrator.prepare_show(payload, random.Random(), with_script=False)
     except PayloadError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -125,6 +127,9 @@ def start():
         "message": "Directo aceptado. Estoy armando la voz y abriendo YouTube.",
         "status": "processing",
         "pais": payload.get("pais") or payload.get("country"),
+        "live_id": show["live_id"],
+        "canal": show["meta"]["canal"],
+        "cuenta": show["cuenta"],
     }), 202
 
 
