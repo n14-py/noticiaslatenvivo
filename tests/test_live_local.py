@@ -5,14 +5,17 @@ import random
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+import urllib.request
+from http.server import ThreadingHTTPServer
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import script_director
 import tts_engine
 from config import TEMP_AUDIO_DIR
-from live_local import aplicar_cuenta, ficha_publica, pagina_html
+from live_local import _Emision, _handler, aplicar_cuenta, ficha_publica, pagina_html
 from live_orchestrator import armar_emision, prepare_show
 from ffmpeg_tools import probe_duration
 
@@ -117,6 +120,43 @@ class EnsayoLocalTests(unittest.TestCase):
             self.assertGreater(probe_duration(programa), noticias[0]["duration"] + 1)
             self.assertEqual(os.listdir(carpeta), ["programa.mp4"])
             self.assertFalse(any(name.startswith("nota_") for name in os.listdir(carpeta)))
+
+    def test_el_navegador_recibe_el_mp4(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            video = os.path.join(tmp, "programa.mp4")
+            _nota_mp4(video, segundos=1)
+            tamano = os.path.getsize(video)
+            ficha = {
+                "duracion": 1,
+                "titulo": "Noticias Lat: resumen en vivo",
+                "canal": "Noticias Lat",
+                "cuenta": 0,
+                "descripcion": "",
+                "tags": [],
+                "presentador": "Mateo",
+                "fecha": "hoy",
+                "segmentos": [],
+            }
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(_Emision(ficha, video, 0)))
+            puerto = server.server_address[1]
+            hilo = threading.Thread(target=server.serve_forever, daemon=True)
+            hilo.start()
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/") as pagina:
+                    self.assertEqual(pagina.status, 200)
+                    self.assertIn(b"/programa.mp4", pagina.read())
+                pedido = urllib.request.Request(
+                    f"http://127.0.0.1:{puerto}/programa.mp4",
+                    headers={"Range": "bytes=0-"},
+                )
+                with urllib.request.urlopen(pedido) as respuesta:
+                    cuerpo = respuesta.read()
+                    self.assertEqual(respuesta.status, 206)
+                    self.assertEqual(len(cuerpo), tamano)
+                    self.assertIn(b"ftyp", cuerpo[:32])
+            finally:
+                server.shutdown()
+                server.server_close()
 
 
 if __name__ == "__main__":

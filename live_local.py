@@ -9,6 +9,7 @@ avisa a la API. Al cortar, borra lo que descargó.
 
 import html
 import json
+import os
 import threading
 import time
 import webbrowser
